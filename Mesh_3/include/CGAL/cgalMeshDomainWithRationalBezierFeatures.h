@@ -11,7 +11,7 @@
 //
 // This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
 // WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-//
+n//
 // $URL$
 // $Id$
 //
@@ -60,15 +60,16 @@ public:
 
   typedef typename Base::Surface_patch_index Surface_patch_index;
 
-  typedef int                     Curve_segment_index;
-  typedef int                     Corner_index;
+  typedef int                       Curve_segment_index;
+  typedef int                       Corner_index;
 
-  typedef typename Base::R         Gt;
-  typedef Gt                       R;
-  typedef typename Base::Point_3   Point_3;
-  typedef typename Gt::FT          FT;
+  typedef typename Base::R          Gt;
+  typedef Gt                        R;
+  typedef typename Base::Point_3    Point_3;
+  typedef typename Base::Sphere_3   Sphere_3;
+  typedef typename Gt::FT           FT;
 
-  typedef CGAL::Tag_true           Has_features;
+  typedef CGAL::Tag_true            Has_features;
 
 
 #ifndef CGAL_CFG_NO_CPP0X_VARIADIC_TEMPLATES
@@ -127,11 +128,11 @@ public:
   ///Returns the parameters of the corner given by /c corner_index on the curve given by /c curve_index
   FT get_corner_parameter_on_curve(const Corner_index& corner_index, const Curve_segment_index& curve_index) const;
 
-  /// Returns a maximal error bound on the distance bewteen the cord linking C(p) to C(q), to the curve from C(p) to C(q)
-  /// \c p : parameter of C(p) in C parameter space
-  /// \c q : parameter of C(q) in C parameter space
-  /// \c curve_index
-  FT error_bound_cord_to_curve(double p, double q, const Curve_segment_index& curve_index) const;
+  //Returns the first previous parameter on the curve at which the sphere intersects the curve
+  FT next_intersection_on_curve(Sphere_3 sphere, Curve_segment_index& curve_index, FT p) const;
+
+  //Returns the next previous parameter on the curve at which the sphere intersects the curve
+  FT previous_intersection_on_curve(Sphere_3 sphere, Curve_segment_index& curve_index, FT p) const;
 
   /// Construct a point on curve \c curve_index at parameter p
   /// of \c starting_point
@@ -335,6 +336,48 @@ point_corner_index(const Point_3& p) const
 }
 
 template <class MD_>
+bool
+cgalMeshDomainWithRationalBezierFeatures<MD_>::next_intersection_on_curve(const Point_3& sphere_center, FT radius, const Curve_segment_index& curve_index, FT p, FT& r_intersection) const
+{
+    CGAL_assertion(p > 0);
+    dtkNurbsProbing::dtkRationalBezierIntersect intersector((edges_.find(curve_index))->second);
+    dtkContinuousGeometryPrimitives::Point_3 dtk_sphere_center(sphere_center.x(), sphere_center.y(), sphere_center.z());
+    dtkContinuousGeometryPrimitives::Sphere dtk_sphere(dtk_sphere_center, rp);
+    std::set< double > intersection_parameters;
+    intersector.intersect(intersection_parameters, sphere);
+    auto lb = intersection_parameters.upper_bound(p);
+    if (lb != intersection_parameters.end()) {
+        r_intersection = *lb;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template <class MD_>
+bool
+cgalMeshDomainWithRationalBezierFeatures<MD_>::previous_intersection_on_curve(Point_3 sphere_center, FT radius, Curve_segment_index& curve_index, FT p, FT r_intersection) const
+{
+    CGAL_assertion(p > 0);
+    dtkNurbsProbing::dtkRationalBezierIntersect intersector((edges_.find(curve_index))->second);
+    dtkContinuousGeometryPrimitives::Point_3 dtk_sphere_center(sphere_center.x(), sphere_center.y(), sphere_center.z());
+    dtkContinuousGeometryPrimitives::Sphere dtk_sphere(dtk_sphere_center, rp);
+    std::set< double > intersection_parameters;
+    intersector.intersect(intersection_parameters, sphere);
+    // ///////////////////////////////////////////////////////////////////
+    // p can never be contained in the set but if the sphere has radius 0
+    // lower bound return something smaller or set::end()
+    // ///////////////////////////////////////////////////////////////////
+    auto lb = intersection_parameters.lower_bound(p);
+    if (lb != intersection_parameters.end()) {
+        r_intersection = *lb;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template <class MD_>
 typename cgalMeshDomainWithRationalBezierFeatures<MD_>::Point_3
 cgalMeshDomainWithRationalBezierFeatures<MD_>::
 construct_point_on_curve_segment(double p, const Curve_segment_index& curve_index) const
@@ -347,27 +390,6 @@ construct_point_on_curve_segment(double p, const Curve_segment_index& curve_inde
     dtkContinuousGeometryPrimitives::Point_3 eval_point(0., 0., 0.);
     eit->second->evaluatePoint(p, eval_point.data());
     return Point_3(eval_point[0], eval_point[1], eval_point[2]);
-}
-
-template <class MD_>
-typename cgalMeshDomainWithRationalBezierFeatures<MD_>::FT
-cgalMeshDomainWithRationalBezierFeatures<MD_>::error_bound_cord_to_curve(double p, double q, const Curve_segment_index& curve_index) const
-{
-    // ///////////////////////////////////////////////////////////////////
-    // Recovers the edge
-    // ///////////////////////////////////////////////////////////////////
-    typename Edges::const_iterator eit = edges_.find(curve_index);
-    CGAL_assertion(eit != edges_.end());
-    // ///////////////////////////////////////////////////////////////////
-    // Clip the curve at p and q, recovers the middle bezier curve and compute
-    // ///////////////////////////////////////////////////////////////////
-    std::vector< double > splitting_parameters(2);
-    splitting_parameters[0] = p;
-    splitting_parameters[1] = q;
-    std::list< dtkRationalBezierCurve * > split_curves;
-    eit->second->split(split_curves, splitting_parameters);
-
-    return dtkContinuousGeometryTools::convexHullApproximationError(*(*(std::next(split_curves.begin()))));
 }
 
 template <class MD_>
