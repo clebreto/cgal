@@ -324,14 +324,14 @@ typename cgalMeshDomainWithRationalBezierFeatures<MD_>::Index
 cgalMeshDomainWithRationalBezierFeatures<MD_>::
 point_corner_index(const Point_3& p) const
 {
-    bool found = false;
-    for(auto it = corners_.begin(); it != corners_.end(); ++it) {
-        if(CGAL::squared_distance(p, it->first) < 1e-7) {
-            return it->second;
+    typename Corners::const_iterator p_index_it = corners_.find(p);
+    if ( p_index_it == corners_.end() )
+        {
+            CGAL_assertion(false);
+            return Index();
         }
-    }
-    CGAL_assertion(false);
-    return Index();
+
+    return p_index_it->second;
 }
 
 template <class MD_>
@@ -379,114 +379,36 @@ cgalMeshDomainWithRationalBezierFeatures<MD_>::
 add_features(InputIterator first, InputIterator last,
              IndicesOutputIterator indices_out)
 {
-    std::list< std::pair< Corner_index, Point_3 > > registered_corners;
-  // Insert one edge for each element
-// ///////////////////////////////////////////////////////////////
-    std::ofstream all("all.xyz");
-    std::ofstream bibi("bibi.xyz");
-    dtkContinuousGeometryPrimitives::Point_3 point(0., 0., 0.);
-// ///////////////////////////////////////////////////////////////
-  while ( first != last )
-  {
-      //Starts at 1 for the first curve
-      const Curve_segment_index curve_index = current_curve_index_++;
-      // ///////////////////////////////////////////////////////////////////
-      // Computes the first and last tips of the edge (the corners)
-      // ///////////////////////////////////////////////////////////////////
-      dtkContinuousGeometryPrimitives::Point_3 first_point(0., 0., 0.);
-      dtkContinuousGeometryPrimitives::Point_3 last_point(0., 0., 0.);
-      (*first)->controlPoint(0, first_point.data());
-      (*first)->controlPoint((*first)->degree(), last_point.data());
-      Point_3 first_cgal(first_point[0], first_point[1], first_point[2]);
-      Point_3 last_cgal(last_point[0], last_point[1], last_point[2]);
-// ///////////////////////////////////////////////////////////////////
-      if(curve_index == 45) {
-          for(double i = 0; i <= 1; i +=0.001) {
-              (*first)->evaluatePoint(i, point.data());
-              bibi << point[0] << " " << point[1] << " " << point[2] << std::endl;
-          }
-      } else {
-          for(double i = 0; i <= 1; i +=0.001) {
-              (*first)->evaluatePoint(i, point.data());
-              all << point[0] << " " << point[1] << " " << point[2] << std::endl;
-          }
-      }
-// /////////////////////////////////////////////////////////////
+    // Insert one edge for each element
+    while ( first != last )
+        {
+            //Starts at 1 for the first curve
+            const Curve_segment_index curve_index = current_curve_index_++;
+            // ///////////////////////////////////////////////////////////////////
+            // Computes the first and last tips of the edge (the corners)
+            // ///////////////////////////////////////////////////////////////////
+            dtkContinuousGeometryPrimitives::Point_3 first_point(0., 0., 0.);
+            dtkContinuousGeometryPrimitives::Point_3 last_point(0., 0., 0.);
+            (*first)->controlPoint(0, first_point.data());
+            (*first)->controlPoint((*first)->degree(), last_point.data());
 
-      // ///////////////////////////////////////////////////////////////////
-      // Checks that the corner was not already inserted
-      // If not, insert it and register it
-      // ///////////////////////////////////////////////////////////////////
-      bool already_inserted = false;
-      Corner_index already_inserted_corner;
-      for(auto it = registered_corners.begin(); it != registered_corners.end(); ++it) {
-          if(CGAL::squared_distance(first_cgal, it->second) < 1e-7) {
-              already_inserted = true;
-              already_inserted_corner = it->first;
-              // /!\ Change the curve here :
-              std::cerr << __LINE__ << std::endl;
-              double w = 0.;
-              (*first)->weight(0, &w);
-              dtkContinuousGeometryPrimitives::Point_3 new_point(it->second[0] * w, it->second[1] * w, it->second[2] * w);
-              std::cerr << std::setprecision(20) << std::endl;
-              std::cerr << "curve index : " << curve_index << std::endl;
-              std::cerr << " old_point : " <<first_cgal << std::endl;
-              std::cerr << " new point : "<< new_point[0] / w << " " << new_point[1] / w << " " << new_point[2] / w << std::endl;
-              (*first)->setControlPoint(0, new_point.data());
-              break;
-          }
-      }
-      if (already_inserted) {
-          corners_parameters.insert(std::make_pair(std::make_pair(already_inserted_corner, curve_index), 0.));
-      } else {
-          Corner_index corner_index = register_corner(first_cgal, curve_index);
-          registered_corners.push_back(std::make_pair(corner_index, first_cgal));
-          //Stores the parameters of the corner on the curve identifid by curve index
-          corners_parameters.insert(std::make_pair(std::make_pair(corner_index, curve_index), 0.));
-      }
+            Corner_index corner_index = register_corner(Point_3(first_point[0], first_point[1], first_point[2]), curve_index);
+            corners_parameters.insert(std::make_pair(std::make_pair(corner_index, curve_index), 0.));
+            std::cerr << "pair indices : " << corner_index << " " << curve_index << std::endl;
+            if (! (first_point == last_point) ) {
+                corner_index = register_corner(Point_3(last_point[0], last_point[1], last_point[2]), curve_index);
+                std::cerr << "pair indices : " << corner_index << " " << curve_index << std::endl;
+                corners_parameters.insert(std::make_pair(std::make_pair(corner_index, curve_index), 1.));
+            }
+            *indices_out++ = curve_index;
 
-      // ///////////////////////////////////////////////////////////////////
-      // Same for the end control point
-      // ///////////////////////////////////////////////////////////////////
-      already_inserted = false;
-      for(auto it = registered_corners.begin(); it != registered_corners.end(); ++it) {
-          if(CGAL::squared_distance(last_cgal, it->second) < 1e-7) {
-              already_inserted = true;
-              already_inserted_corner = it->first;
-              // /!\ Change the curve here :
-              std::cerr << __LINE__ << std::endl;
-              double w = 0.;
-              (*first)->weight((*first)->degree(), &w);
-              dtkContinuousGeometryPrimitives::Point_3 new_point(it->second[0] * w, it->second[1] * w, it->second[2] * w);
-              std::cerr << std::setprecision(20) << std::endl;
-              std::cerr << "curve index : " << curve_index << std::endl;
-              std::cerr << " old_point : " << last_cgal << std::endl;
-              std::cerr << " new point : "<< new_point[0] / w << " " << new_point[1] / w << " " << new_point[2] / w << std::endl;
-              (*first)->setControlPoint((*first)->degree(), new_point.data());
-              break;
-          }
-      }
-      if (already_inserted) {
-          corners_parameters.insert(std::make_pair(std::make_pair(already_inserted_corner, curve_index), 1.));
-      } else {
-          Corner_index corner_index = register_corner(last_cgal, curve_index);
-          registered_corners.push_back(std::make_pair(corner_index, last_cgal));
-          //Stores the parameters of the corner on the curve identifid by curve index
-          corners_parameters.insert(std::make_pair(std::make_pair(corner_index, curve_index), 1.));
-      }
-
-      *indices_out++ = curve_index;
-
-      // Create a new rational bezier curve
-      std::pair<typename Edges::iterator,bool> insertion = edges_.insert(std::make_pair(curve_index, *first));
-      ++first;
-  }
-
-  for (auto it = corners_parameters.begin(); it != corners_parameters.end(); ++it) {
-      std::cerr << it->first.first << " " << it->first.second << " " << it->second << std::endl;
-  }
-  compute_corners_incidences();
-  return indices_out;
+            // Create a new rational bezier curve
+            std::pair<typename Edges::iterator,bool> insertion =
+                edges_.insert(std::make_pair(curve_index, *first));
+            ++first;
+        }
+    compute_corners_incidences();
+    return indices_out;
 }
 
 template <class MD_>
