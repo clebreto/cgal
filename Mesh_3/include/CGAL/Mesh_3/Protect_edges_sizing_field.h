@@ -132,6 +132,9 @@ namespace CGAL {
             typedef std::vector<std::pair<Vertex_handle,Curve_segment_index> > Incident_vertices;
 
         private:
+            /// Merge the balls lying at a distance < lambda from each other
+            void merge_close_balls();
+
             /// Insert corners of the mesh
             void insert_corners();
 
@@ -437,6 +440,7 @@ operator()(const bool refine)
     CGAL_assertion(minimal_size_ > 0 || c3t3_.is_valid());
  }
 
+  merge_close_balls();
   // debug_dump_c3t3("dump-mesh-after-protect_edges.binary.cgal", c3t3_);
 
 #ifdef CGAL_MESH_3_VERBOSE
@@ -444,6 +448,42 @@ operator()(const bool refine)
 #endif
 }
 
+template <typename C3T3, typename MD, typename Sf>
+void
+Protect_edges_sizing_field<C3T3, MD, Sf>::
+merge_close_balls()
+{
+    // ///////////////////////////////////////////////////////////////////
+    // Iterates on each vertex of the triangulation, and check distance to first neighbors
+    // ///////////////////////////////////////////////////////////////////
+    const Tr& tr = c3t3_.triangulation();
+    typename Gt::Compare_distance_3 compare_dist = tr.geom_traits().compare_distance_3_object();
+    typename Gt::Compute_squared_distance_3 squared_distance = tr.geom_traits().compute_squared_distance_3_object();
+    std::vector< Vertex_handle > vs;
+    vs.reserve(32);
+    for(auto vit = tr.finite_vertices_begin(); vit != tr.finite_vertices_end(); ++vit) {
+        const bool special_ball = is_special(vit);
+        if(special_ball) {
+            vs.reserve(32);
+            tr.finite_adjacent_vertices(vit, std::back_inserter(vs));
+            typename Tr::Point nearest = vs[0]->point();
+            for(auto fav = vs.begin(); fav != vs.end(); ++fav) {
+                if(compare_dist((*fav)->point(), vit->point(), nearest) == CGAL::SMALLER) {
+                    nearest =  vit->point();
+                }
+            }
+            const FT nearest_sq_dist = squared_distance( nearest, vit->point());
+            if (squared_distance( nearest, vit->point()) < 0.5) {
+                // ///////////////////////////////////////////////////////////////////
+                // Removes both from the triangulation
+                // If at leat one is a corner, upate the corners incidences
+                //
+                // ///////////////////////////////////////////////////////////////////
+
+            }
+        }
+    }
+}
 
 template <typename C3T3, typename MD, typename Sf>
 void
@@ -913,19 +953,10 @@ typename Protect_edges_sizing_field<C3T3, MD, Sf>::Vertex_handle
 Protect_edges_sizing_field<C3T3, MD, Sf>::
 get_vertex_corner_from_point(const Bare_point& p, const Index&) const
 {
-    // ///////////////////////////////////////////////////////////////////
-  // Recovers the registered corner point
-    // ///////////////////////////////////////////////////////////////////
-  Corner_index index;
-  index = boost::get<Corner_index>(domain_.point_corner_index(p));
-  Bare_point corner_point = domain_.corner_point_from_index(index);
-
   // Get vertex_handle associated to corner (dim=0) point
   Vertex_handle v;
   CGAL_assertion_code( bool q_finded = )
-  c3t3_.triangulation().is_vertex(Weighted_point(corner_point), v);
-  std::cerr << p << std::endl;
-  std::cerr << corner_point << std::endl;
+  c3t3_.triangulation().is_vertex(Weighted_point(p), v);
   // Let the weight be 0, because is_vertex only locates the point, and
   // check that the location type is VERTEX.
   CGAL_assertion( q_finded );
@@ -1008,14 +1039,6 @@ insert_balls(const Vertex_handle& vp,
     } else {
         q = vq->meshing_info();
     }
-    //Checks if the curve is included inside bp and bq
-    // if(is_curve_segment_inside_spheres(p, cp, rp, q, cq, rq, curve_index) && !is_deep_covering(cp, rp, cq, rq)) {
-    //     change_ball_size(vp, rp  * 1.);
-    //     change_ball_size(vq, rq  * 1.);
-    //     insert_balls(vp, vq, curve_index, out);
-    //     std::cerr << "OOUILLE OUILLE OUILLE" << std::endl;
-    //     // getchar();
-    // }
     bool included = is_curve_segment_inside_spheres(p, cp, rp, q, cq, rq, curve_index) // && is_deep_covering(cp, rp, cq, rq)
         ;
     if(included) {
@@ -1025,20 +1048,6 @@ insert_balls(const Vertex_handle& vp,
 
     double x = 0.;
     bool inserted = try_insert(p, q, cp, cq, rp, rq, curve_index, &x);
-      //Checks if the curve is included inside bp and bq
-    // if(!inserted && !is_deep_covering(cp, rp, cq, rq)) {
-    //     // ///////////////////////////////////////////////////////////////////
-    //     // Need to reduce the balls size
-    //     // ///////////////////////////////////////////////////////////////////
-    //     // change_ball_size(vp, vp->point().weight() * 1.);
-    //     // change_ball_size(vq, vq->point().weight() * 1.);
-     // ///////////////////////////////////////////////////////////////////
-     // Or removes the balls and try insert more than 2
-     // ///////////////////////////////////////////////////////////////////
-    //     insert_balls(vp, vq, curve_index, out);
-    //     std::cerr << "OOUILLE OUILLE OUILLE 2" << std::endl;
-    //     // getchar();
-    // }
     //If there is no room for adding a sphere between p and q, does nothing
     //It is because the curve is included in the spheres but it hasnt been detected by the previous detection on the bound
     if (!inserted // && is_deep_covering(cp, rp, cq, rq)
