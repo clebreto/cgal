@@ -382,6 +382,8 @@ private:
   std::set<Vertex_handle> unchecked_vertices_;
   int refine_balls_iteration_nb;
   bool nonlinear_growth_of_balls;
+
+  double gamma_;
 };
 
 
@@ -396,6 +398,7 @@ Protect_edges_sizing_field(C3T3& c3t3, const MD& domain,
   , minimal_weight_(CGAL::square(minimal_size))
   , refine_balls_iteration_nb(0)
   , nonlinear_growth_of_balls(false)
+  , gamma_(1e-6)
 {
 #ifndef CGAL_MESH_3_NO_PROTECTION_NON_LINEAR
   set_nonlinear_growth_of_balls();
@@ -453,6 +456,7 @@ void
 Protect_edges_sizing_field<C3T3, MD, Sf>::
 merge_close_balls()
 {
+    dtkWarn() << "Merge close balls";
     // ///////////////////////////////////////////////////////////////////
     // Iterates on each vertex of the triangulation, and check distance to first neighbors
     // ///////////////////////////////////////////////////////////////////
@@ -466,20 +470,75 @@ merge_close_balls()
         if(special_ball) {
             vs.reserve(32);
             tr.finite_adjacent_vertices(vit, std::back_inserter(vs));
-            typename Tr::Point nearest = vs[0]->point();
+            typename Tr::Point nearest_point = vs[0]->point();
+            Vertex_handle nearest_v = vs[0];
             for(auto fav = vs.begin(); fav != vs.end(); ++fav) {
-                if(compare_dist((*fav)->point(), vit->point(), nearest) == CGAL::SMALLER) {
-                    nearest =  vit->point();
+                if(compare_dist((*fav)->point(), vit->point(), nearest_point) == CGAL::SMALLER) {
+                    nearest_point =  vit->point();
+                    nearest_v = *fav;
                 }
             }
-            const FT nearest_sq_dist = squared_distance( nearest, vit->point());
-            if (squared_distance( nearest, vit->point()) < 0.5) {
+            const FT nearest_sq_dist = squared_distance( nearest_point, vit->point());
+            if (squared_distance( nearest_point, vit->point()) < gamma_) {
                 // ///////////////////////////////////////////////////////////////////
-                // Removes both from the triangulation
+                // Compute the containing sphere position and size
+                // Removes both former spheres from the triangulation
                 // If at leat one is a corner, upate the corners incidences
                 //
                 // ///////////////////////////////////////////////////////////////////
+                FT distance = compute_distance(vit->point(), nearest_point);
+                FT r0 = get_radius(vit);
+                FT r1 = get_radius(nearest_v);
+                typename Tr::Point new_center = nearest_point + (r0 - r1 + distance) / 2 * (vit->point() - nearest_point) / distance;
+                FT new_weight = (r0 + r1 + distance) / 2;
 
+                // Get incident vertices along c3t3 edge
+                Incident_vertices incident_vertices;
+                c3t3_.adjacent_vertices_in_complex(nearest_v, std::back_inserter(incident_vertices));
+                // Remove incident edges from complex
+                for ( typename Incident_vertices::iterator vit = incident_vertices.begin(),
+                          vend = incident_vertices.end() ; vit != vend ; ++vit )
+                    {
+                        c3t3_.remove_from_complex(nearest_v,vit->first);
+                    }
+
+                // // Store point data
+                // Index index = c3t3_.index(v);
+                // int dim = get_dimension(v);
+                // Bare_point p = v->point().point();
+
+                // // Remove v from corners
+                // boost::optional<Corner_index> corner_index =
+                //     boost::make_optional(false, Corner_index());
+                // if ( c3t3_.is_in_complex(v) )
+                //     {
+                //         corner_index = c3t3_.corner_index(v);
+                //         c3t3_.remove_from_complex(v);
+                //     }
+
+                // unchecked_vertices_.erase(v);
+                // // Change v size
+                // double meshing_info = v->meshing_info();
+                // c3t3_.triangulation().remove(v);
+
+                // Vertex_handle new_v = insert_point(p, w , dim, index, special_ball);
+                // new_v->set_meshing_info(meshing_info);
+
+                // // Restore v in corners
+                // if ( corner_index )
+                //     {
+                //         // As C3t3::add_to_complex modifies the 'in_dimension' of the vertex,
+                //         // we need to backup and re-set the 'is_special' marker after.
+                //         const bool special_ball = is_special(new_v);
+                //         c3t3_.add_to_complex(new_v,*corner_index);
+                //         if(special_ball) {
+                //             set_special(new_v);
+                //         }
+                //     }
+
+                dtkWarn() << "Would merge here";
+
+                getchar();
             }
         }
     }
